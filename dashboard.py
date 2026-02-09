@@ -6,8 +6,8 @@ import io
 from datetime import datetime, date
 
 # --- 1. CONFIGURATIE (INVULLEN!) ---
-SUPABASE_URL = "st.secrets["SUPABASE_URL"
-SUPABASE_KEY = "st.secrets["SUPABASE_KEY"]"
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 # Verbinden met database
 @st.cache_resource
