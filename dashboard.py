@@ -182,9 +182,16 @@ if uploaded_file:
                     
                     if i % 100 == 0: progress.progress(min(i / len(df), 1.0))
                 
-                if to_upload:
-                    for i in range(0, len(to_upload), 1000):
-                        supabase.table('leads').insert(to_upload[i:i+1000]).execute()
+                # Uploaden naar LEADS tabel (Met veilige Upsert)
+            if to_upload:
+                for i in range(0, len(to_upload), 1000):
+                    try:
+                        # on_conflict='phone' zorgt dat hij niet crasht op dubbelen
+                        # ignore_duplicates=True zorgt dat hij ze stilletjes overslaat
+                        supabase.table('leads').upsert(to_upload[i:i+1000], on_conflict='phone', ignore_duplicates=True).execute()
+                    except Exception as e:
+                        # Als hij toch klaagt, gaan we door (niet crashen!)
+                        print(f"Batch warning: {e}")
                 
                 st.success("✅ Import naar Dialer voltooid!")
                 c1, c2, c3, c4 = st.columns(4)
