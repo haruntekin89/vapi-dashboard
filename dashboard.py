@@ -5,7 +5,7 @@ from supabase import create_client
 import io
 from datetime import datetime, date
 
-# --- 1. CONFIGURATIE ---
+# --- 1. CONFIGURATIE (Haal keys uit geheime kluis) ---
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -13,6 +13,7 @@ except:
     st.error("Geen secrets gevonden. Voeg ze toe in Streamlit Cloud instellingen.")
     st.stop()
 
+# Verbinden met database
 @st.cache_resource
 def init_connection():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -20,7 +21,7 @@ def init_connection():
 try:
     supabase = init_connection()
 except:
-    st.error("Kan geen verbinding maken met Supabase.")
+    st.error("Kan geen verbinding maken met Supabase. Check je URL en KEY.")
     st.stop()
 
 st.set_page_config(layout="centered", page_title="Vapi Pro Dashboard", page_icon="📞")
@@ -141,7 +142,7 @@ with st.expander("🛠️ Beheer & Opschonen", expanded=False):
 
 st.divider()
 
-# --- 8. IMPORT MODULE ---
+# --- 8. IMPORT MODULE (MET KEUZE: DIALER OF BLACKLIST) ---
 st.subheader("📂 Leads & Blacklist Importeren")
 
 import_doel = st.radio("Waar wil je dit bestand importeren?", ["📞 Leads voor Dialer", "⛔ Nummers voor Blacklist"])
@@ -150,7 +151,6 @@ uploaded_file = st.file_uploader(f"Upload Excel/CSV voor {import_doel}", type=['
 if uploaded_file:
     try:
         if uploaded_file.name.endswith('.csv'): 
-            # Slimme CSV lezer
             try: df = pd.read_csv(uploaded_file, dtype=str, sep=None, engine='python')
             except: df = pd.read_csv(uploaded_file, dtype=str, sep=';')
         else: 
@@ -170,7 +170,6 @@ if uploaded_file:
             status_text = st.empty()
             
             if import_doel == "📞 Leads voor Dialer":
-                # Haal bestaande nummers op
                 db_leads = supabase.table('leads').select("phone").execute()
                 existing_numbers = {row['phone'] for row in db_leads.data}
                 
@@ -217,7 +216,6 @@ if uploaded_file:
                 c4.metric("⚠️ Ongeldig", c_inv)
 
             else:
-                # Blacklist import
                 db_black = supabase.table('blacklist').select("phone").execute()
                 existing_black = {row['phone'] for row in db_black.data}
                 
@@ -257,7 +255,7 @@ if uploaded_file:
 
 st.divider()
 
-# --- 9. EXPORT ---
+# --- 9. EXPORT (AANGEPAST: EXTRA KOLOMMEN & JSON UITPAKKEN) ---
 st.subheader("📥 Export Succesvolle Leads")
 
 col_d1, col_d2 = st.columns(2)
@@ -272,24 +270,32 @@ if st.button("Download Excel"):
         df_exp = pd.DataFrame(res.data)
         
         if not df_exp.empty:
+            # 1. JSON uitpakken
             if 'original_data' in df_exp.columns:
                 json_data = pd.json_normalize(df_exp['original_data'])
                 df_final = pd.concat([df_exp[['phone', 'result', 'duration', 'recording', 'ended_at']], json_data], axis=1)
             else:
                 df_final = df_exp
             
+            # 2. EXTRA KOLOMMEN
             df_final.insert(0, "enquete", "telefonische enquete vrije tijd en ontspanning")
             
             if 'ended_at' in df_final.columns:
                 df_final['enquete_datum'] = pd.to_datetime(df_final['ended_at']).dt.strftime('%d-%m-%Y')
                 
+            # 3. Excel Maken
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False)
                 
-            st.download_button("⬇️ Download Excel", buffer, f"leads_{start_d}.xlsx", "application/vnd.ms-excel")
+            st.download_button(
+                label="⬇️ Klik hier om de Excel te downloaden",
+                data=buffer,
+                file_name=f"leads_{start_d}_tot_{end_d}.xlsx",
+                mime="application/vnd.ms-excel"
+            )
         else:
-            st.warning("Geen succesvolle leads gevonden.")
+            st.warning("Geen succesvolle leads gevonden in deze periode.")
             
     except Exception as e:
-        st.error(f"Fout: {e}")
+        st.error(f"Er ging iets mis bij de export: {e}")
