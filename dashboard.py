@@ -4,8 +4,9 @@ import time
 from supabase import create_client
 import io
 from datetime import datetime, date
+import json
 
-# --- 1. CONFIGURATIE (Haal keys uit geheime kluis) ---
+# --- 1. CONFIGURATIE ---
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -102,7 +103,7 @@ if col_btn2.button("⏹ STOP DIALER"):
 if col_btn3.button("🔄 VERVERS"):
     st.rerun()
 
-# --- NIEUW: SNELHEID SCHUIFBALK ---
+# --- SNELHEID ---
 try:
     speed_res = supabase.table('config').select("value").eq("key", "speed").execute()
     current_speed = int(speed_res.data[0]['value']) if speed_res.data else 20
@@ -118,6 +119,37 @@ if new_speed != current_speed:
     st.success(f"Snelheid aangepast naar {new_speed} calls/minuut!")
     time.sleep(1)
     st.rerun()
+
+# --- NIEUW: TELEFOONNUMMERS (ROTATIE) ---
+st.write("") 
+st.subheader("📞 Telefoonnummers (Rotatie)")
+
+# Huidige nummers ophalen
+try:
+    phone_res = supabase.table('config').select("value").eq("key", "phone_ids").execute()
+    if phone_res.data:
+        saved_list = json.loads(phone_res.data[0]['value'])
+        current_text = "\n".join(saved_list)
+    else:
+        current_text = ""
+except:
+    current_text = ""
+
+# Tekstvak
+st.caption("Plak hier je Vapi Phone ID's (één per regel).")
+ids_input = st.text_area("Phone ID's:", value=current_text, height=100)
+
+# Opslaan knop
+if st.button("💾 Opslaan Nummers"):
+    clean_list = [line.strip() for line in ids_input.split('\n') if line.strip()]
+    if clean_list:
+        json_str = json.dumps(clean_list)
+        supabase.table('config').upsert({"key": "phone_ids", "value": json_str}).execute()
+        st.success(f"Opgeslagen! De motor gebruikt nu {len(clean_list)} nummers.")
+        time.sleep(1)
+        st.rerun()
+    else:
+        st.error("Vul minimaal één ID in.")
 
 st.divider()
 
@@ -142,7 +174,7 @@ with st.expander("🛠️ Beheer & Opschonen", expanded=False):
 
 st.divider()
 
-# --- 8. IMPORT MODULE (MET KEUZE: DIALER OF BLACKLIST) ---
+# --- 8. IMPORT MODULE ---
 st.subheader("📂 Leads & Blacklist Importeren")
 
 import_doel = st.radio("Waar wil je dit bestand importeren?", ["📞 Leads voor Dialer", "⛔ Nummers voor Blacklist"])
@@ -201,7 +233,6 @@ if uploaded_file:
                     if i % 100 == 0: progress.progress(min(i / len(df), 1.0))
                 
                 if to_upload:
-                    # Upload in chunks van 1000
                     for i in range(0, len(to_upload), 1000):
                         try:
                             supabase.table('leads').upsert(to_upload[i:i+1000], on_conflict='phone', ignore_duplicates=True).execute()
@@ -255,7 +286,7 @@ if uploaded_file:
 
 st.divider()
 
-# --- 9. EXPORT (AANGEPAST: EXTRA KOLOMMEN & JSON UITPAKKEN) ---
+# --- 9. EXPORT ---
 st.subheader("📥 Export Succesvolle Leads")
 
 col_d1, col_d2 = st.columns(2)
@@ -270,20 +301,17 @@ if st.button("Download Excel"):
         df_exp = pd.DataFrame(res.data)
         
         if not df_exp.empty:
-            # 1. JSON uitpakken
             if 'original_data' in df_exp.columns:
                 json_data = pd.json_normalize(df_exp['original_data'])
                 df_final = pd.concat([df_exp[['phone', 'result', 'duration', 'recording', 'ended_at']], json_data], axis=1)
             else:
                 df_final = df_exp
             
-            # 2. EXTRA KOLOMMEN
             df_final.insert(0, "enquete", "telefonische enquete vrije tijd en ontspanning")
             
             if 'ended_at' in df_final.columns:
                 df_final['enquete_datum'] = pd.to_datetime(df_final['ended_at']).dt.strftime('%d-%m-%Y')
                 
-            # 3. Excel Maken
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False)
@@ -295,7 +323,7 @@ if st.button("Download Excel"):
                 mime="application/vnd.ms-excel"
             )
         else:
-            st.warning("Geen succesvolle leads gevonden in deze periode.")
+            st.warning("Geen succesvolle leads gevonden.")
             
     except Exception as e:
-        st.error(f"Er ging iets mis bij de export: {e}")
+        st.error(f"Fout: {e}")
