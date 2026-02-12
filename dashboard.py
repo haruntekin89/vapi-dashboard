@@ -86,7 +86,7 @@ c1.metric("✅ Succes Vandaag", count_succes)
 c2.metric("❌ Mislukt Vandaag", count_fail)
 c3.metric("⏳ Wachtrij Totaal", count_todo)
 
-# --- 6. BESTURINGSKNOPPEN ---
+# --- 6. BESTURING ---
 st.divider()
 st.subheader("⚙️ Besturing")
 
@@ -120,44 +120,44 @@ if new_speed != current_speed:
     time.sleep(1)
     st.rerun()
 
-# --- NIEUW: TELEFOONNUMMERS (ROTATIE) ---
-st.write("") 
-st.subheader("📞 Telefoonnummers (Rotatie)")
+# --- 7. TELEFOONNUMMERS (4 VAKJES) ---
+st.write("")
+st.subheader("📞 Uitbel Nummers (Vapi Phone ID's)")
 
-# Huidige nummers ophalen
+# Haal huidige nummers op
 try:
     phone_res = supabase.table('config').select("value").eq("key", "phone_ids").execute()
-    if phone_res.data:
-        saved_list = json.loads(phone_res.data[0]['value'])
-        current_text = "\n".join(saved_list)
-    else:
-        current_text = ""
+    saved_list = json.loads(phone_res.data[0]['value']) if phone_res.data else ["", "", "", ""]
 except:
-    current_text = ""
+    saved_list = ["", "", "", ""]
 
-# Tekstvak
-st.caption("Plak hier je Vapi Phone ID's (één per regel).")
-ids_input = st.text_area("Phone ID's:", value=current_text, height=100)
+# Zorg dat de lijst altijd 4 lang is
+while len(saved_list) < 4: saved_list.append("")
 
-# Opslaan knop
+col_p1, col_p2 = st.columns(2)
+col_p3, col_p4 = st.columns(2)
+
+# De 4 vakjes
+p1 = col_p1.text_input("Nummer 1 ID:", value=saved_list[0])
+p2 = col_p2.text_input("Nummer 2 ID:", value=saved_list[1])
+p3 = col_p3.text_input("Nummer 3 ID:", value=saved_list[2])
+p4 = col_p4.text_input("Nummer 4 ID:", value=saved_list[3])
+
 if st.button("💾 Opslaan Nummers"):
-    clean_list = [line.strip() for line in ids_input.split('\n') if line.strip()]
-    if clean_list:
-        json_str = json.dumps(clean_list)
-        supabase.table('config').upsert({"key": "phone_ids", "value": json_str}).execute()
-        st.success(f"Opgeslagen! De motor gebruikt nu {len(clean_list)} nummers.")
-        time.sleep(1)
-        st.rerun()
-    else:
-        st.error("Vul minimaal één ID in.")
+    new_list = [x.strip() for x in [p1, p2, p3, p4] if x.strip()]
+    json_str = json.dumps(new_list)
+    supabase.table('config').upsert({"key": "phone_ids", "value": json_str}).execute()
+    st.success(f"Opgeslagen! De motor gebruikt nu {len(new_list)} nummers.")
+    time.sleep(1); st.rerun()
 
 st.divider()
 
-# --- 7. BEHEER & ONDERHOUD ---
+# --- 8. BEHEER & ONDERHOUD ---
 with st.expander("🛠️ Beheer & Opschonen", expanded=False):
     b1, b2 = st.columns(2)
     
     if b1.button("♻️ Reset 'Geen Gehoor'"):
+        # Reset mislukte pogingen
         supabase.table('leads').update({"status": "new", "result": None}).in_("result", ["No Answer", "Busy", "Failed", "MISLUKT", "customer-did-not-answer"]).execute()
         st.success("Leads zijn gereset.")
         time.sleep(2)
@@ -174,7 +174,7 @@ with st.expander("🛠️ Beheer & Opschonen", expanded=False):
 
 st.divider()
 
-# --- 8. IMPORT MODULE ---
+# --- 9. IMPORT MODULE ---
 st.subheader("📂 Leads & Blacklist Importeren")
 
 import_doel = st.radio("Waar wil je dit bestand importeren?", ["📞 Leads voor Dialer", "⛔ Nummers voor Blacklist"])
@@ -233,6 +233,7 @@ if uploaded_file:
                     if i % 100 == 0: progress.progress(min(i / len(df), 1.0))
                 
                 if to_upload:
+                    # Upload in chunks van 1000
                     for i in range(0, len(to_upload), 1000):
                         try:
                             supabase.table('leads').upsert(to_upload[i:i+1000], on_conflict='phone', ignore_duplicates=True).execute()
@@ -286,7 +287,7 @@ if uploaded_file:
 
 st.divider()
 
-# --- 9. EXPORT ---
+# --- 10. EXPORT ---
 st.subheader("📥 Export Succesvolle Leads")
 
 col_d1, col_d2 = st.columns(2)
@@ -304,8 +305,7 @@ if st.button("Download Excel"):
             if 'original_data' in df_exp.columns:
                 json_data = pd.json_normalize(df_exp['original_data'])
                 df_final = pd.concat([df_exp[['phone', 'result', 'duration', 'recording', 'ended_at']], json_data], axis=1)
-            else:
-                df_final = df_exp
+            else: df_final = df_exp
             
             df_final.insert(0, "enquete", "telefonische enquete vrije tijd en ontspanning")
             
@@ -316,12 +316,7 @@ if st.button("Download Excel"):
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False)
                 
-            st.download_button(
-                label="⬇️ Klik hier om de Excel te downloaden",
-                data=buffer,
-                file_name=f"leads_{start_d}_tot_{end_d}.xlsx",
-                mime="application/vnd.ms-excel"
-            )
+            st.download_button("⬇️ Download Excel", buffer, f"leads_{start_d}.xlsx", "application/vnd.ms-excel")
         else:
             st.warning("Geen succesvolle leads gevonden.")
             
