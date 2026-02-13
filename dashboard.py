@@ -311,7 +311,7 @@ if st.button("Download Excel"):
             
             if 'ended_at' in df_final.columns:
                 # errors='coerce' zorgt dat hij niet crasht op kleine verschillen
-df_final['enquete_datum'] = pd.to_datetime(df_final['ended_at'], errors='coerce').dt.strftime('%d-%m-%Y')
+            df_final['enquete_datum'] = pd.to_datetime(df_final['ended_at'], errors='coerce').dt.strftime('%d-%m-%Y')
                 
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
