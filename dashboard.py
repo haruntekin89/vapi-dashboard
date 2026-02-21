@@ -157,9 +157,14 @@ with st.expander("🛠️ Beheer & Opschonen", expanded=False):
     b1, b2 = st.columns(2)
     
     if b1.button("♻️ Reset 'Geen Gehoor'"):
-        # Reset mislukte pogingen
-        supabase.table('leads').update({"status": "new", "result": None}).in_("result", ["No Answer", "Busy", "Failed", "MISLUKT", "customer-did-not-answer"]).execute()
-        st.success("Leads zijn gereset.")
+        # We kijken nu naar 'ended_reason' voor de echte Vapi status
+        supabase.table('leads').update({"status": "new", "result": None}).in_("ended_reason", ["customer-did-not-answer", "no-answer-transfer", "voicemail"]).execute()
+        
+        # OOK de vastlopers (status='in-progress' maar geen resultaat) meenemen?
+        # Zet dit aan als je dat wilt:
+        # supabase.table('leads').update({"status": "new"}).eq("status", "in-progress").is_("result", "null").execute()
+        
+        st.success("Leads (Geen Gehoor) zijn gereset en staan weer in de wachtrij.")
         time.sleep(2)
         st.rerun()
         
