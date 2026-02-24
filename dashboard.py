@@ -112,7 +112,7 @@ except:
 
 st.write("")
 st.write(f"**Huidige snelheid:** {current_speed} calls per minuut")
-new_speed = st.slider("", min_value=10, max_value=60, value=current_speed, step=5, label_visibility="collapsed")
+new_speed = st.slider("", min_value=10, max_value=100, value=current_speed, step=5, label_visibility="collapsed")
 
 if new_speed != current_speed:
     supabase.table('config').upsert({"key": "speed", "value": str(new_speed)}).execute()
