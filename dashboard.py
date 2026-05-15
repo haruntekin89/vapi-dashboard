@@ -281,33 +281,6 @@ if new_speed != current_speed:
     time.sleep(1)
     st.rerun()
 
-# --- 7. TELEFOONNUMMERS (4 VAKJES) ---
-try:
-    raw_ids = cached_config("phone_ids")
-    saved_list = json.loads(raw_ids) if raw_ids else ["", "", "", ""]
-except Exception:
-    saved_list = ["", "", "", ""]
-
-while len(saved_list) < 4: saved_list.append("")
-actief_aantal = sum(1 for x in saved_list if x.strip())
-
-with st.expander(f"📞 Uitbel Nummers (Vapi Phone IDs) — {actief_aantal} actief", expanded=False):
-    col_p1, col_p2 = st.columns(2)
-    col_p3, col_p4 = st.columns(2)
-
-    p1 = col_p1.text_input("Nummer 1 ID:", value=saved_list[0])
-    p2 = col_p2.text_input("Nummer 2 ID:", value=saved_list[1])
-    p3 = col_p3.text_input("Nummer 3 ID:", value=saved_list[2])
-    p4 = col_p4.text_input("Nummer 4 ID:", value=saved_list[3])
-
-    if st.button("💾 Opslaan Nummers"):
-        new_list = [x.strip() for x in [p1, p2, p3, p4] if x.strip()]
-        json_str = json.dumps(new_list)
-        supabase.table('config').upsert({"key": "phone_ids", "value": json_str}).execute()
-        st.cache_data.clear()
-        st.success(f"Opgeslagen! De motor gebruikt nu {len(new_list)} nummers.")
-        time.sleep(1); st.rerun()
-
 st.divider()
 
 # --- BATCH RAPPORTAGE ---
@@ -596,6 +569,48 @@ if st.button("Download Excel"):
             st.download_button("⬇️ Download Excel", buffer, f"leads_{start_d}.xlsx", "application/vnd.ms-excel")
         else:
             st.warning("Geen succesvolle leads gevonden.")
-            
+
     except Exception as e:
         st.error(f"Fout: {e}")
+
+st.divider()
+
+# --- TELEFOONNUMMERS (4 VAKJES) ---
+try:
+    raw_ids = cached_config("phone_ids")
+    saved_list = json.loads(raw_ids) if raw_ids else ["", "", "", ""]
+except Exception:
+    saved_list = ["", "", "", ""]
+
+try:
+    raw_labels = cached_config("phone_labels")
+    labels_map = json.loads(raw_labels) if raw_labels else {}
+except Exception:
+    labels_map = {}
+
+while len(saved_list) < 4: saved_list.append("")
+actief_aantal = sum(1 for x in saved_list if x.strip())
+
+with st.expander(f"📞 Uitbel Nummers (Vapi Phone IDs) — {actief_aantal} actief", expanded=False):
+    st.caption("Geef elk nummer een label (bv. telefoonnummer of beschrijving) zodat je weet welke ID welke is.")
+
+    nieuwe_labels = []
+    nieuwe_ids = []
+    for i in range(4):
+        col_lbl, col_id = st.columns([1, 2])
+        huidige_id = saved_list[i]
+        huidig_label = labels_map.get(huidige_id, "") if huidige_id else ""
+        lbl = col_lbl.text_input(f"Label {i+1}", value=huidig_label, key=f"phone_label_{i}",
+                                  placeholder="bv. +31 6 12 34 56 78")
+        pid = col_id.text_input(f"Vapi Phone ID {i+1}", value=huidige_id, key=f"phone_id_{i}")
+        nieuwe_labels.append(lbl.strip())
+        nieuwe_ids.append(pid.strip())
+
+    if st.button("💾 Opslaan Nummers"):
+        new_id_list = [pid for pid in nieuwe_ids if pid]
+        new_label_map = {pid: lbl for pid, lbl in zip(nieuwe_ids, nieuwe_labels) if pid and lbl}
+        supabase.table('config').upsert({"key": "phone_ids", "value": json.dumps(new_id_list)}).execute()
+        supabase.table('config').upsert({"key": "phone_labels", "value": json.dumps(new_label_map)}).execute()
+        st.cache_data.clear()
+        st.success(f"Opgeslagen! De motor gebruikt nu {len(new_id_list)} nummers.")
+        time.sleep(1); st.rerun()
