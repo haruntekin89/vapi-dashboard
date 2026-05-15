@@ -56,6 +56,19 @@ def normalize_number(raw_num):
     if digits.startswith("0"):    digits = digits[1:]
     return f"+31{digits}" if len(digits) == 9 else None
 
+def fetch_all(table, columns, page_size=1000):
+    # Supabase geeft default max 1000 rows terug — paginate om alles op te halen
+    rows = []
+    offset = 0
+    while True:
+        res = supabase.table(table).select(columns).range(offset, offset + page_size - 1).execute()
+        page = res.data or []
+        rows.extend(page)
+        if len(page) < page_size:
+            break
+        offset += page_size
+    return rows
+
 # --- 4. STATUS CONTROLEREN ---
 try:
     status_res = supabase.table('config').select("value").eq("key", "status").execute()
@@ -194,8 +207,7 @@ st.divider()
 st.subheader("📊 Batches Overzicht")
 
 try:
-    batch_res = supabase.table('leads').select("batch_id,status,result,ended_reason").execute()
-    df_batches = pd.DataFrame(batch_res.data)
+    df_batches = pd.DataFrame(fetch_all('leads', 'batch_id,status,result,ended_reason'))
 except Exception as e:
     st.error(f"Kan batches niet ophalen: {e}")
     df_batches = pd.DataFrame()
@@ -293,11 +305,8 @@ if uploaded_file:
                 bestandsnaam = re.sub(r'[^\w\-]', '_', bestandsnaam).strip('_').lower() or "import"
                 batch_id = f"{bestandsnaam}_{datetime.now().strftime('%Y-%m-%d_%H%M')}"
 
-                db_leads = supabase.table('leads').select("phone").execute()
-                existing_numbers = {row['phone'] for row in db_leads.data}
-
-                db_black = supabase.table('blacklist').select("phone").execute()
-                blacklist_numbers = {row['phone'] for row in db_black.data}
+                existing_numbers = {row['phone'] for row in fetch_all('leads', 'phone')}
+                blacklist_numbers = {row['phone'] for row in fetch_all('blacklist', 'phone')}
 
                 to_upload = []
                 c_new, c_dup, c_black, c_inv = 0, 0, 0, 0
@@ -340,8 +349,7 @@ if uploaded_file:
                 c4.metric("⚠️ Ongeldig", c_inv)
 
             else:
-                db_black = supabase.table('blacklist').select("phone").execute()
-                existing_black = {row['phone'] for row in db_black.data}
+                existing_black = {row['phone'] for row in fetch_all('blacklist', 'phone')}
                 
                 to_blacklist = []
                 c_new, c_dup, c_inv = 0, 0, 0
