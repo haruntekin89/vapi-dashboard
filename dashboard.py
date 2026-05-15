@@ -31,19 +31,100 @@ st.set_page_config(layout="centered", page_title="Vapi Pro Dashboard", page_icon
 # --- 2. DESIGN & CSS ---
 st.markdown("""
 <style>
-    .main { background-color: #f8f9fa; }
-    .status-active { 
-        background-color: #d4edda; color: #155724; padding: 20px; border-radius: 10px; 
-        border: 1px solid #c3e6cb; text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px;
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
-    .status-stopped { 
-        background-color: #f8d7da; color: #721c24; padding: 20px; border-radius: 10px; 
-        border: 1px solid #f5c6cb; text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px;
+
+    [data-testid="stAppViewContainer"] { background-color: #f9fafb; }
+    .block-container { padding-top: 2rem; padding-bottom: 3rem; max-width: 1100px; }
+
+    /* Page header */
+    .app-header {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 28px; padding-bottom: 18px; border-bottom: 1px solid #e5e7eb;
     }
-    div[data-testid="metric-container"] {
-        background-color: white; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px;
+    .app-title { font-size: 22px; font-weight: 700; color: #111827; margin: 0; }
+    .app-subtitle { font-size: 13px; color: #6b7280; margin: 2px 0 0 0; }
+
+    /* Status pill */
+    .status-pill {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 6px 14px; border-radius: 999px;
+        font-size: 13px; font-weight: 600; letter-spacing: 0.2px;
     }
-    .stButton>button { width: 100%; border-radius: 6px; font-weight: 600; height: 50px; }
+    .pill-active  { background: #d1fae5; color: #065f46; }
+    .pill-stopped { background: #fee2e2; color: #991b1b; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot-active  { background: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
+    .dot-stopped { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.15); }
+
+    /* KPI cards */
+    [data-testid="metric-container"] {
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 20px 22px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    [data-testid="metric-container"] label {
+        color: #6b7280 !important;
+        font-size: 12px !important;
+        font-weight: 500 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+    }
+    [data-testid="metric-container"] [data-testid="stMetricValue"] {
+        font-size: 30px !important;
+        font-weight: 700 !important;
+        color: #111827 !important;
+    }
+
+    /* Buttons */
+    .stButton > button {
+        width: 100%; height: 42px;
+        border-radius: 8px; font-weight: 600; font-size: 14px;
+        border: 1px solid #e5e7eb; background: white; color: #374151;
+        transition: all 0.15s ease;
+    }
+    .stButton > button:hover {
+        border-color: #d1d5db; background: #f3f4f6;
+    }
+    .stButton > button[kind="primary"] {
+        background: #2563eb; color: white; border: 1px solid #2563eb;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background: #1d4ed8; border-color: #1d4ed8;
+    }
+
+    /* Section headers */
+    h1, h2, h3 { color: #111827; font-weight: 600; }
+    [data-testid="stMarkdownContainer"] h2 { font-size: 18px; margin-top: 8px; }
+    [data-testid="stMarkdownContainer"] h3 { font-size: 16px; }
+
+    /* Expanders → cards */
+    [data-testid="stExpander"] {
+        border: 1px solid #e5e7eb !important;
+        border-radius: 10px !important;
+        background: white;
+        margin-bottom: 8px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+    }
+    [data-testid="stExpander"] summary { font-weight: 500; }
+
+    /* Inputs strakker */
+    [data-baseweb="input"] > div, [data-baseweb="select"] > div {
+        border-radius: 8px;
+    }
+
+    /* Dividers subtieler */
+    hr { margin: 28px 0; border: none; border-top: 1px solid #e5e7eb; }
+
+    /* File uploader card */
+    [data-testid="stFileUploader"] section {
+        border-radius: 10px; border: 1px dashed #d1d5db; background: #f9fafb;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -76,9 +157,19 @@ try:
 except: current_status = "UIT"
 
 if current_status == "AAN":
-    st.markdown('<div class="status-active">🟢 SYSTEEM ACTIEF</div>', unsafe_allow_html=True)
+    pill_html = '<span class="status-pill pill-active"><span class="status-dot dot-active"></span>Systeem actief</span>'
 else:
-    st.markdown('<div class="status-stopped">🔴 SYSTEEM GESTOPT</div>', unsafe_allow_html=True)
+    pill_html = '<span class="status-pill pill-stopped"><span class="status-dot dot-stopped"></span>Systeem gestopt</span>'
+
+st.markdown(f"""
+<div class="app-header">
+    <div>
+        <h1 class="app-title">📞 Vapi Dialer</h1>
+        <p class="app-subtitle">Beheer je belcampagnes en monitor de voortgang</p>
+    </div>
+    {pill_html}
+</div>
+""", unsafe_allow_html=True)
 
 # --- 5. KPI TELLERS (VANDAAG) ---
 vandaag = date.today().isoformat()
@@ -124,9 +215,8 @@ try:
 except:
     current_speed = 20
 
-st.write("")
-st.write(f"**Huidige snelheid:** {current_speed} calls per minuut")
-new_speed = st.slider("", min_value=10, max_value=100, value=current_speed, step=5, label_visibility="collapsed")
+st.markdown(f"##### ⚡ Snelheid &nbsp;·&nbsp; <span style='color:#6b7280;font-weight:500'>{current_speed} calls per minuut</span>", unsafe_allow_html=True)
+new_speed = st.slider("snelheid", min_value=10, max_value=100, value=current_speed, step=5, label_visibility="collapsed")
 
 if new_speed != current_speed:
     supabase.table('config').upsert({"key": "speed", "value": str(new_speed)}).execute()
@@ -135,9 +225,6 @@ if new_speed != current_speed:
     st.rerun()
 
 # --- 7. TELEFOONNUMMERS (4 VAKJES) ---
-st.write("")
-st.subheader("📞 Uitbel Nummers (Vapi Phone ID's)")
-
 # Haal huidige nummers op
 try:
     phone_res = supabase.table('config').select("value").eq("key", "phone_ids").execute()
@@ -145,24 +232,24 @@ try:
 except:
     saved_list = ["", "", "", ""]
 
-# Zorg dat de lijst altijd 4 lang is
 while len(saved_list) < 4: saved_list.append("")
+actief_aantal = sum(1 for x in saved_list if x.strip())
 
-col_p1, col_p2 = st.columns(2)
-col_p3, col_p4 = st.columns(2)
+with st.expander(f"📞 Uitbel Nummers (Vapi Phone IDs) — {actief_aantal} actief", expanded=False):
+    col_p1, col_p2 = st.columns(2)
+    col_p3, col_p4 = st.columns(2)
 
-# De 4 vakjes
-p1 = col_p1.text_input("Nummer 1 ID:", value=saved_list[0])
-p2 = col_p2.text_input("Nummer 2 ID:", value=saved_list[1])
-p3 = col_p3.text_input("Nummer 3 ID:", value=saved_list[2])
-p4 = col_p4.text_input("Nummer 4 ID:", value=saved_list[3])
+    p1 = col_p1.text_input("Nummer 1 ID:", value=saved_list[0])
+    p2 = col_p2.text_input("Nummer 2 ID:", value=saved_list[1])
+    p3 = col_p3.text_input("Nummer 3 ID:", value=saved_list[2])
+    p4 = col_p4.text_input("Nummer 4 ID:", value=saved_list[3])
 
-if st.button("💾 Opslaan Nummers"):
-    new_list = [x.strip() for x in [p1, p2, p3, p4] if x.strip()]
-    json_str = json.dumps(new_list)
-    supabase.table('config').upsert({"key": "phone_ids", "value": json_str}).execute()
-    st.success(f"Opgeslagen! De motor gebruikt nu {len(new_list)} nummers.")
-    time.sleep(1); st.rerun()
+    if st.button("💾 Opslaan Nummers"):
+        new_list = [x.strip() for x in [p1, p2, p3, p4] if x.strip()]
+        json_str = json.dumps(new_list)
+        supabase.table('config').upsert({"key": "phone_ids", "value": json_str}).execute()
+        st.success(f"Opgeslagen! De motor gebruikt nu {len(new_list)} nummers.")
+        time.sleep(1); st.rerun()
 
 st.divider()
 
@@ -233,7 +320,7 @@ else:
         mislukt = int((sub['result'] == 'MISLUKT').sum())
         bezig = int((sub['status'] == 'in-progress').sum())
 
-        titel = f"📦 **{batch}** — {totaal} leads · ⏳ {wachtrij} te bellen · ✅ {succes} succes"
+        titel = f"📦  {batch}    —    {totaal} leads  ·  ⏳ {wachtrij} te bellen  ·  ✅ {succes} succes"
         with st.expander(titel, expanded=False):
             m1, m2, m3, m4, m5 = st.columns(5)
             m1.metric("📞 Totaal", totaal)
