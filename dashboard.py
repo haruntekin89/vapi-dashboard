@@ -5,6 +5,7 @@ from supabase import create_client
 import io
 from datetime import datetime, date
 import json
+import re
 
 # --- 1. CONFIGURATIE ---
 try:
@@ -189,6 +190,76 @@ with st.expander("🛠️ Beheer & Opschonen", expanded=False):
 
 st.divider()
 
+# --- BATCHES OVERZICHT ---
+st.subheader("📊 Batches Overzicht")
+
+try:
+    batch_res = supabase.table('leads').select("batch_id,status,result,ended_reason").execute()
+    df_batches = pd.DataFrame(batch_res.data)
+except Exception as e:
+    st.error(f"Kan batches niet ophalen: {e}")
+    df_batches = pd.DataFrame()
+
+if df_batches.empty:
+    st.info("Nog geen leads in de database.")
+else:
+    df_batches['batch_id'] = df_batches['batch_id'].fillna('onbekend')
+
+    # Nieuwste batches bovenaan, 'oude_import' altijd onderaan
+    alle_batches = df_batches['batch_id'].unique().tolist()
+    overige = sorted([b for b in alle_batches if b != 'oude_import'], reverse=True)
+    if 'oude_import' in alle_batches:
+        overige.append('oude_import')
+
+    GEEN_GEHOOR_REDENEN = ["customer-did-not-answer", "no-answer-transfer", "voicemail", "silence-timed-out"]
+
+    for batch in overige:
+        sub = df_batches[df_batches['batch_id'] == batch]
+        totaal = len(sub)
+        wachtrij = int((sub['status'] == 'new').sum())
+        succes = int((sub['result'] == 'SUCCES').sum())
+        mislukt = int((sub['result'] == 'MISLUKT').sum())
+        bezig = int((sub['status'] == 'in-progress').sum())
+
+        titel = f"📦 **{batch}** — {totaal} leads · ⏳ {wachtrij} te bellen · ✅ {succes} succes"
+        with st.expander(titel, expanded=False):
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("📞 Totaal", totaal)
+            m2.metric("⏳ Te bellen", wachtrij)
+            m3.metric("✅ Succes", succes)
+            m4.metric("❌ Mislukt", mislukt)
+            m5.metric("🔄 Bezig", bezig)
+
+            col_r, col_d = st.columns(2)
+
+            # Reset 'Geen Gehoor' alleen voor deze batch
+            if col_r.button("♻️ Reset Geen Gehoor", key=f"reset_{batch}"):
+                try:
+                    aantal = 0
+                    for reden in GEEN_GEHOOR_REDENEN:
+                        res = supabase.table('leads').update({"status": "new", "result": None}) \
+                            .eq("batch_id", batch).eq("ended_reason", reden).execute()
+                        aantal += len(res.data) if res.data else 0
+                    st.success(f"✅ {aantal} leads in '{batch}' staan weer in de wachtrij.")
+                    time.sleep(1.5); st.rerun()
+                except Exception as e:
+                    st.error(f"Fout bij reset: {e}")
+
+            # Verwijder hele batch — checkbox eerst, dan knop (correct pattern)
+            bevestig = col_d.checkbox(f"Bevestig verwijderen", key=f"conf_{batch}")
+            if col_d.button("🗑️ Verwijder Batch", key=f"del_{batch}"):
+                if bevestig:
+                    try:
+                        supabase.table('leads').delete().eq("batch_id", batch).execute()
+                        st.warning(f"🗑️ Batch '{batch}' is volledig verwijderd.")
+                        time.sleep(1.5); st.rerun()
+                    except Exception as e:
+                        st.error(f"Fout bij verwijderen: {e}")
+                else:
+                    st.info("Vink eerst 'Bevestig verwijderen' aan.")
+
+st.divider()
+
 # --- 9. IMPORT MODULE ---
 st.subheader("📂 Leads & Blacklist Importeren")
 
@@ -217,15 +288,20 @@ if uploaded_file:
             status_text = st.empty()
             
             if import_doel == "📞 Leads voor Dialer":
+                # Batch-naam: bestandsnaam (zonder extensie, opgeschoond) + datum/tijd
+                bestandsnaam = re.sub(r'\.[^.]+$', '', uploaded_file.name)
+                bestandsnaam = re.sub(r'[^\w\-]', '_', bestandsnaam).strip('_').lower() or "import"
+                batch_id = f"{bestandsnaam}_{datetime.now().strftime('%Y-%m-%d_%H%M')}"
+
                 db_leads = supabase.table('leads').select("phone").execute()
                 existing_numbers = {row['phone'] for row in db_leads.data}
-                
+
                 db_black = supabase.table('blacklist').select("phone").execute()
                 blacklist_numbers = {row['phone'] for row in db_black.data}
-                
+
                 to_upload = []
                 c_new, c_dup, c_black, c_inv = 0, 0, 0, 0
-                
+
                 for i, (index, row) in enumerate(df.iterrows()):
                     clean = normalize_number(row[phone_col])
                     if not clean:
@@ -240,6 +316,7 @@ if uploaded_file:
                             "phone": clean,
                             "name": clean_naam,
                             "status": "new",
+                            "batch_id": batch_id,
                             "original_data": row.to_dict()
                         })
                         existing_numbers.add(clean)
@@ -255,7 +332,7 @@ if uploaded_file:
                         except Exception as e:
                             print(f"Batch warning: {e}")
                 
-                st.success("✅ Import voltooid!")
+                st.success(f"✅ Import voltooid! Batch: **{batch_id}**")
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("🆕 Toegevoegd", c_new)
                 c2.metric("🔄 Dubbel", c_dup)

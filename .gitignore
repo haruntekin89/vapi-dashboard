@@ -1,0 +1,14 @@
+# Lokale worker — draait op PythonAnywhere, niet in deze repo
+motor.py
+
+# macOS rommel
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Streamlit secrets (lokaal)
+.streamlit/secrets.toml
