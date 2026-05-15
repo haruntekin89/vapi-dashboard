@@ -310,45 +310,6 @@ with st.expander(f"📞 Uitbel Nummers (Vapi Phone IDs) — {actief_aantal} acti
 
 st.divider()
 
-# --- 8. BEHEER & ONDERHOUD ---
-with st.expander("🛠️ Beheer & Opschonen", expanded=False):
-    b1, b2 = st.columns(2)
-    
-    if b1.button("♻️ Reset 'Geen Gehoor'"):
-        # We doen ze stuk voor stuk, dat is veiliger
-        try:
-            # 1. Reset 'customer-did-not-answer'
-            supabase.table('leads').update({"status": "new", "result": None}).eq("ended_reason", "customer-did-not-answer").execute()
-            
-            # 2. Reset 'no-answer-transfer'
-            supabase.table('leads').update({"status": "new", "result": None}).eq("ended_reason", "no-answer-transfer").execute()
-            
-            # 3. Reset 'voicemail'
-            supabase.table('leads').update({"status": "new", "result": None}).eq("ended_reason", "voicemail").execute()
-            
-            # 4. Optioneel: Reset 'silence-timed-out' (vaak ook voicemail)
-            supabase.table('leads').update({"status": "new", "result": None}).eq("ended_reason", "silence-timed-out").execute()
-
-            st.cache_data.clear()
-            st.success("✅ Leads (Geen Gehoor) zijn gereset!")
-            time.sleep(2)
-            st.rerun()
-
-        except Exception as e:
-            st.error(f"Fout bij resetten: {e}")
-
-    if b2.button("🗑️ Verwijder ALLES (Hard Reset)"):
-        if st.checkbox("Ik weet zeker dat ik de hele database wil wissen"):
-            supabase.table('leads').delete().neq("id", 0).execute()
-            st.cache_data.clear()
-            st.warning("Database is volledig gewist.")
-            time.sleep(2)
-            st.rerun()
-        else:
-            st.info("Vink het vakje aan om te bevestigen.")
-
-st.divider()
-
 # --- BATCH RAPPORTAGE ---
 st.subheader("📊 Batch Rapportage")
 
