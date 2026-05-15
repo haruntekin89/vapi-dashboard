@@ -250,330 +250,317 @@ c3.metric("⏳ Wachtrij Totaal", count_todo)
 
 # --- 6. BESTURING ---
 st.divider()
-st.subheader("⚙️ Besturing")
+with st.expander("⚙️ Besturing", expanded=True):
+    col_btn1, col_btn2, col_btn3 = st.columns(3)
 
-col_btn1, col_btn2, col_btn3 = st.columns(3)
+    if col_btn1.button("▶ START DIALER", type="primary"):
+        supabase.table('config').upsert({"key": "status", "value": "AAN"}).execute()
+        st.cache_data.clear(); st.rerun()
 
-if col_btn1.button("▶ START DIALER", type="primary"):
-    supabase.table('config').upsert({"key": "status", "value": "AAN"}).execute()
-    st.cache_data.clear(); st.rerun()
+    if col_btn2.button("⏹ STOP DIALER"):
+        supabase.table('config').upsert({"key": "status", "value": "UIT"}).execute()
+        st.cache_data.clear(); st.rerun()
 
-if col_btn2.button("⏹ STOP DIALER"):
-    supabase.table('config').upsert({"key": "status", "value": "UIT"}).execute()
-    st.cache_data.clear(); st.rerun()
+    if col_btn3.button("🔄 VERVERS"):
+        st.cache_data.clear(); st.rerun()
 
-if col_btn3.button("🔄 VERVERS"):
-    st.cache_data.clear(); st.rerun()
+    # --- SNELHEID ---
+    try:
+        current_speed = int(cached_config("speed", "20"))
+    except Exception:
+        current_speed = 20
 
-# --- SNELHEID ---
-try:
-    current_speed = int(cached_config("speed", "20"))
-except Exception:
-    current_speed = 20
+    st.markdown(f"##### ⚡ Snelheid &nbsp;·&nbsp; <span style='color:#6b7280;font-weight:500'>{current_speed} calls per minuut</span>", unsafe_allow_html=True)
+    new_speed = st.slider("snelheid", min_value=10, max_value=100, value=current_speed, step=5, label_visibility="collapsed")
 
-st.markdown(f"##### ⚡ Snelheid &nbsp;·&nbsp; <span style='color:#6b7280;font-weight:500'>{current_speed} calls per minuut</span>", unsafe_allow_html=True)
-new_speed = st.slider("snelheid", min_value=10, max_value=100, value=current_speed, step=5, label_visibility="collapsed")
-
-if new_speed != current_speed:
-    supabase.table('config').upsert({"key": "speed", "value": str(new_speed)}).execute()
-    st.cache_data.clear()
-    st.success(f"Snelheid aangepast naar {new_speed} calls/minuut!")
-    time.sleep(1)
-    st.rerun()
-
-st.divider()
+    if new_speed != current_speed:
+        supabase.table('config').upsert({"key": "speed", "value": str(new_speed)}).execute()
+        st.cache_data.clear()
+        st.success(f"Snelheid aangepast naar {new_speed} calls/minuut!")
+        time.sleep(1)
+        st.rerun()
 
 # --- BATCH RAPPORTAGE ---
-st.subheader("📊 Batch Rapportage")
+with st.expander("📊 Batch Rapportage", expanded=False):
+    try:
+        batches_data = cached_batches_overzicht()
+    except Exception as e:
+        st.error(f"Kan batches niet ophalen: {e}. Heb je de RPC functie 'batches_overzicht' al aangemaakt in Supabase?")
+        batches_data = []
 
-try:
-    batches_data = cached_batches_overzicht()
-except Exception as e:
-    st.error(f"Kan batches niet ophalen: {e}. Heb je de RPC functie 'batches_overzicht' al aangemaakt in Supabase?")
-    batches_data = []
-
-if not batches_data:
-    st.info("Nog geen leads in de database.")
-else:
-    # Nieuwste batches eerst, 'oude_import' onderaan
-    overige = sorted([b for b in batches_data if b['batch_id'] != 'oude_import'],
-                     key=lambda b: b['batch_id'], reverse=True)
-    oude = [b for b in batches_data if b['batch_id'] == 'oude_import']
-    geordend = overige + oude
-
-    # --- Filter rij: status + batch ---
-    col_f1, col_f2 = st.columns([1, 2])
-
-    filter_keuze = col_f1.selectbox(
-        "Status",
-        ["🔥 Actief (nog te bellen)", "✅ Inactief (klaar)", "📋 Alle batches"],
-        index=0,
-    )
-
-    if filter_keuze.startswith("🔥"):
-        zichtbaar = [b for b in geordend if int(b['te_bellen']) > 0]
-    elif filter_keuze.startswith("✅"):
-        zichtbaar = [b for b in geordend if int(b['te_bellen']) == 0]
+    if not batches_data:
+        st.info("Nog geen leads in de database.")
     else:
-        zichtbaar = geordend
+        # Nieuwste batches eerst, 'oude_import' onderaan
+        overige = sorted([b for b in batches_data if b['batch_id'] != 'oude_import'],
+                         key=lambda b: b['batch_id'], reverse=True)
+        oude = [b for b in batches_data if b['batch_id'] == 'oude_import']
+        geordend = overige + oude
 
-    if not zichtbaar:
-        col_f2.selectbox("Batch", ["— geen batches in deze filter —"], disabled=True)
-        st.info("Geen batches gevonden voor deze filter.")
-    else:
-        batch_labels = {
-            f"📦 {b['batch_id']}  ·  {int(b['totaal']):,} leads".replace(",", "."): b
-            for b in zichtbaar
-        }
-        gekozen_label = col_f2.selectbox(f"Batch ({len(zichtbaar)})", list(batch_labels.keys()))
-        gekozen = batch_labels[gekozen_label]
-        batch_id = gekozen['batch_id']
+        # --- Filter rij: status + batch ---
+        col_f1, col_f2 = st.columns([1, 2])
 
-        # --- Periode dropdown + optionele datums ---
-        col_p1, col_p2, col_p3 = st.columns([1, 1, 1])
-        periode = col_p1.selectbox(
-            "Periode",
-            ["Vandaag", "Laatste 7 dagen", "Laatste 30 dagen", "Hele looptijd", "Aangepast"],
-            index=3,
+        filter_keuze = col_f1.selectbox(
+            "Status",
+            ["🔥 Actief (nog te bellen)", "✅ Inactief (klaar)", "📋 Alle batches"],
+            index=0,
         )
 
-        vandaag_d = date.today()
-        if periode == "Vandaag":
-            van_d, tot_d = vandaag_d, vandaag_d
-            col_p2.text_input("Van", value=van_d.isoformat(), disabled=True, key=f"van_disp_{batch_id}")
-            col_p3.text_input("Tot", value=tot_d.isoformat(), disabled=True, key=f"tot_disp_{batch_id}")
-        elif periode == "Laatste 7 dagen":
-            van_d, tot_d = vandaag_d - pd.Timedelta(days=6), vandaag_d
-            col_p2.text_input("Van", value=van_d.isoformat(), disabled=True, key=f"van_disp_{batch_id}")
-            col_p3.text_input("Tot", value=tot_d.isoformat(), disabled=True, key=f"tot_disp_{batch_id}")
-        elif periode == "Laatste 30 dagen":
-            van_d, tot_d = vandaag_d - pd.Timedelta(days=29), vandaag_d
-            col_p2.text_input("Van", value=van_d.isoformat(), disabled=True, key=f"van_disp_{batch_id}")
-            col_p3.text_input("Tot", value=tot_d.isoformat(), disabled=True, key=f"tot_disp_{batch_id}")
-        elif periode == "Hele looptijd":
-            van_d, tot_d = date(2020, 1, 1), vandaag_d
-            col_p2.text_input("Van", value="—", disabled=True, key=f"van_disp_{batch_id}")
-            col_p3.text_input("Tot", value=vandaag_d.isoformat(), disabled=True, key=f"tot_disp_{batch_id}")
-        else:  # Aangepast
-            van_d = col_p2.date_input("Van", value=vandaag_d - pd.Timedelta(days=29), key=f"van_{batch_id}")
-            tot_d = col_p3.date_input("Tot", value=vandaag_d, key=f"tot_{batch_id}")
+        if filter_keuze.startswith("🔥"):
+            zichtbaar = [b for b in geordend if int(b['te_bellen']) > 0]
+        elif filter_keuze.startswith("✅"):
+            zichtbaar = [b for b in geordend if int(b['te_bellen']) == 0]
+        else:
+            zichtbaar = geordend
 
-        if isinstance(van_d, pd.Timestamp): van_d = van_d.date()
-        if isinstance(tot_d, pd.Timestamp): tot_d = tot_d.date()
+        if not zichtbaar:
+            col_f2.selectbox("Batch", ["— geen batches in deze filter —"], disabled=True)
+            st.info("Geen batches gevonden voor deze filter.")
+        else:
+            batch_labels = {
+                f"📦 {b['batch_id']}  ·  {int(b['totaal']):,} leads".replace(",", "."): b
+                for b in zichtbaar
+            }
+            gekozen_label = col_f2.selectbox(f"Batch ({len(zichtbaar)})", list(batch_labels.keys()))
+            gekozen = batch_labels[gekozen_label]
+            batch_id = gekozen['batch_id']
 
-        # --- Rapportage ---
-        try:
-            stats = cached_batch_stats(batch_id, van_d.isoformat(), tot_d.isoformat())
-        except Exception as e:
-            st.error(f"Kan rapportage niet ophalen: {e}")
-            stats = None
+            # --- Periode dropdown + optionele datums ---
+            col_p1, col_p2, col_p3 = st.columns([1, 1, 1])
+            periode = col_p1.selectbox(
+                "Periode",
+                ["Vandaag", "Laatste 7 dagen", "Laatste 30 dagen", "Hele looptijd", "Aangepast"],
+                index=3,
+            )
 
-        totaal = int(gekozen['totaal'])
-        wachtrij = int(gekozen['te_bellen'])
+            vandaag_d = date.today()
+            if periode == "Vandaag":
+                van_d, tot_d = vandaag_d, vandaag_d
+                col_p2.text_input("Van", value=van_d.isoformat(), disabled=True, key=f"van_disp_{batch_id}")
+                col_p3.text_input("Tot", value=tot_d.isoformat(), disabled=True, key=f"tot_disp_{batch_id}")
+            elif periode == "Laatste 7 dagen":
+                van_d, tot_d = vandaag_d - pd.Timedelta(days=6), vandaag_d
+                col_p2.text_input("Van", value=van_d.isoformat(), disabled=True, key=f"van_disp_{batch_id}")
+                col_p3.text_input("Tot", value=tot_d.isoformat(), disabled=True, key=f"tot_disp_{batch_id}")
+            elif periode == "Laatste 30 dagen":
+                van_d, tot_d = vandaag_d - pd.Timedelta(days=29), vandaag_d
+                col_p2.text_input("Van", value=van_d.isoformat(), disabled=True, key=f"van_disp_{batch_id}")
+                col_p3.text_input("Tot", value=tot_d.isoformat(), disabled=True, key=f"tot_disp_{batch_id}")
+            elif periode == "Hele looptijd":
+                van_d, tot_d = date(2020, 1, 1), vandaag_d
+                col_p2.text_input("Van", value="—", disabled=True, key=f"van_disp_{batch_id}")
+                col_p3.text_input("Tot", value=vandaag_d.isoformat(), disabled=True, key=f"tot_disp_{batch_id}")
+            else:  # Aangepast
+                van_d = col_p2.date_input("Van", value=vandaag_d - pd.Timedelta(days=29), key=f"van_{batch_id}")
+                tot_d = col_p3.date_input("Tot", value=vandaag_d, key=f"tot_{batch_id}")
 
-        st.markdown(f"##### 📦 {batch_id}")
+            if isinstance(van_d, pd.Timestamp): van_d = van_d.date()
+            if isinstance(tot_d, pd.Timestamp): tot_d = tot_d.date()
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("📞 Totaal in batch", f"{totaal:,}".replace(",", "."))
-        m2.metric("⏳ Nog te bellen", f"{wachtrij:,}".replace(",", "."))
-        m3.metric("📅 Gebeld in periode", f"{(stats['totaal_gebeld'] if stats else 0):,}".replace(",", "."))
-
-        if stats:
-            m4, m5, m6 = st.columns(3)
-            m4.metric("✅ Succes", f"{stats['succes']:,}".replace(",", "."))
-            m5.metric("📵 Geen gehoor", f"{stats['no_answer']:,}".replace(",", "."))
-            m6.metric("❌ Mislukt", f"{stats['mislukt']:,}".replace(",", "."))
-
-        st.markdown("&nbsp;", unsafe_allow_html=True)
-
-        # --- Acties ---
-        col_r, col_d = st.columns(2)
-
-        if col_r.button("♻️ Reset Geen Gehoor", key=f"reset_{batch_id}"):
+            # --- Rapportage ---
             try:
-                res = supabase.table('leads').update({"status": "new", "result": None}) \
-                    .eq("batch_id", batch_id).in_("ended_reason", GEEN_GEHOOR_REDENEN).execute()
-                aantal = len(res.data) if res.data else 0
-                st.cache_data.clear()
-                st.success(f"✅ {aantal} leads in '{batch_id}' staan weer in de wachtrij.")
-                time.sleep(1.5); st.rerun()
+                stats = cached_batch_stats(batch_id, van_d.isoformat(), tot_d.isoformat())
             except Exception as e:
-                st.error(f"Fout bij reset: {e}")
+                st.error(f"Kan rapportage niet ophalen: {e}")
+                stats = None
 
-        bevestig = col_d.checkbox("Bevestig verwijderen", key=f"conf_{batch_id}")
-        if col_d.button("🗑️ Verwijder Batch", key=f"del_{batch_id}"):
-            if bevestig:
+            totaal = int(gekozen['totaal'])
+            wachtrij = int(gekozen['te_bellen'])
+
+            st.markdown(f"##### 📦 {batch_id}")
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("📞 Totaal in batch", f"{totaal:,}".replace(",", "."))
+            m2.metric("⏳ Nog te bellen", f"{wachtrij:,}".replace(",", "."))
+            m3.metric("📅 Gebeld in periode", f"{(stats['totaal_gebeld'] if stats else 0):,}".replace(",", "."))
+
+            if stats:
+                m4, m5, m6 = st.columns(3)
+                m4.metric("✅ Succes", f"{stats['succes']:,}".replace(",", "."))
+                m5.metric("📵 Geen gehoor", f"{stats['no_answer']:,}".replace(",", "."))
+                m6.metric("❌ Mislukt", f"{stats['mislukt']:,}".replace(",", "."))
+
+            st.markdown("&nbsp;", unsafe_allow_html=True)
+
+            # --- Acties ---
+            col_r, col_d = st.columns(2)
+
+            if col_r.button("♻️ Reset Geen Gehoor", key=f"reset_{batch_id}"):
                 try:
-                    supabase.table('leads').delete().eq("batch_id", batch_id).execute()
+                    res = supabase.table('leads').update({"status": "new", "result": None}) \
+                        .eq("batch_id", batch_id).in_("ended_reason", GEEN_GEHOOR_REDENEN).execute()
+                    aantal = len(res.data) if res.data else 0
                     st.cache_data.clear()
-                    st.warning(f"🗑️ Batch '{batch_id}' is volledig verwijderd.")
+                    st.success(f"✅ {aantal} leads in '{batch_id}' staan weer in de wachtrij.")
                     time.sleep(1.5); st.rerun()
                 except Exception as e:
-                    st.error(f"Fout bij verwijderen: {e}")
-            else:
-                st.info("Vink eerst 'Bevestig verwijderen' aan.")
+                    st.error(f"Fout bij reset: {e}")
 
-st.divider()
+            bevestig = col_d.checkbox("Bevestig verwijderen", key=f"conf_{batch_id}")
+            if col_d.button("🗑️ Verwijder Batch", key=f"del_{batch_id}"):
+                if bevestig:
+                    try:
+                        supabase.table('leads').delete().eq("batch_id", batch_id).execute()
+                        st.cache_data.clear()
+                        st.warning(f"🗑️ Batch '{batch_id}' is volledig verwijderd.")
+                        time.sleep(1.5); st.rerun()
+                    except Exception as e:
+                        st.error(f"Fout bij verwijderen: {e}")
+                else:
+                    st.info("Vink eerst 'Bevestig verwijderen' aan.")
 
 # --- 9. IMPORT MODULE ---
-st.subheader("📂 Leads & Blacklist Importeren")
+with st.expander("📂 Leads & Blacklist Importeren", expanded=False):
+    import_doel = st.radio("Waar wil je dit bestand importeren?", ["📞 Leads voor Dialer", "⛔ Nummers voor Blacklist"])
+    uploaded_file = st.file_uploader(f"Upload Excel/CSV voor {import_doel}", type=['xlsx', 'csv'])
 
-import_doel = st.radio("Waar wil je dit bestand importeren?", ["📞 Leads voor Dialer", "⛔ Nummers voor Blacklist"])
-uploaded_file = st.file_uploader(f"Upload Excel/CSV voor {import_doel}", type=['xlsx', 'csv'])
-
-if uploaded_file:
-    try:
-        if uploaded_file.name.endswith('.csv'): 
-            try: df = pd.read_csv(uploaded_file, dtype=str, sep=None, engine='python')
-            except: df = pd.read_csv(uploaded_file, dtype=str, sep=';')
-        else: 
-            df = pd.read_excel(uploaded_file, dtype=str)
-        
-        df = df.fillna("")
-        
-        cols = df.columns.tolist()
-        phone_col = st.selectbox("Welke kolom is het telefoonnummer?", ["Kies..."] + cols)
-        
-        name_col = None
-        if import_doel == "📞 Leads voor Dialer":
-            name_col = st.selectbox("Welke kolom is de naam?", ["Kies..."] + cols)
-
-        if st.button(f"🚀 Start Import naar {import_doel}") and phone_col != "Kies...":
-            progress = st.progress(0)
-            status_text = st.empty()
-            
-            if import_doel == "📞 Leads voor Dialer":
-                # Batch-naam: bestandsnaam (zonder extensie, opgeschoond) + datum/tijd
-                bestandsnaam = re.sub(r'\.[^.]+$', '', uploaded_file.name)
-                bestandsnaam = re.sub(r'[^\w\-]', '_', bestandsnaam).strip('_').lower() or "import"
-                batch_id = f"{bestandsnaam}_{datetime.now().strftime('%Y-%m-%d_%H%M')}"
-
-                # Pass 1: normaliseer alle nummers één keer
-                clean_phones = [normalize_number(row[phone_col]) for _, row in df.iterrows()]
-
-                # Check alleen de nummers uit dit bestand tegen DB (niet hele tabel ophalen)
-                geldige = [p for p in clean_phones if p]
-                existing_numbers = existing_phones('leads', geldige)
-                blacklist_numbers = existing_phones('blacklist', geldige)
-
-                to_upload = []
-                c_new, c_dup, c_black, c_inv = 0, 0, 0, 0
-
-                for i, (index, row) in enumerate(df.iterrows()):
-                    clean = clean_phones[i]
-                    if not clean:
-                        c_inv += 1
-                    elif clean in blacklist_numbers:
-                        c_black += 1
-                    elif clean in existing_numbers:
-                        c_dup += 1
-                    else:
-                        clean_naam = str(row[name_col]) if name_col and name_col != "Kies..." else "Klant"
-                        to_upload.append({
-                            "phone": clean,
-                            "name": clean_naam,
-                            "status": "new",
-                            "batch_id": batch_id,
-                            "original_data": row.to_dict()
-                        })
-                        existing_numbers.add(clean)
-                        c_new += 1
-
-                    if i % 100 == 0: progress.progress(min(i / len(df), 1.0))
-                
-                if to_upload:
-                    # Upload in chunks van 1000
-                    for i in range(0, len(to_upload), 1000):
-                        try:
-                            supabase.table('leads').upsert(to_upload[i:i+1000], on_conflict='phone', ignore_duplicates=True).execute()
-                        except Exception as e:
-                            print(f"Batch warning: {e}")
-                
-                st.success(f"✅ Import voltooid! Batch: **{batch_id}**")
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("🆕 Toegevoegd", c_new)
-                c2.metric("🔄 Dubbel", c_dup)
-                c3.metric("⛔ Blacklist", c_black)
-                c4.metric("⚠️ Ongeldig", c_inv)
-
+    if uploaded_file:
+        try:
+            if uploaded_file.name.endswith('.csv'):
+                try: df = pd.read_csv(uploaded_file, dtype=str, sep=None, engine='python')
+                except: df = pd.read_csv(uploaded_file, dtype=str, sep=';')
             else:
-                clean_phones = [normalize_number(row[phone_col]) for _, row in df.iterrows()]
-                existing_black = existing_phones('blacklist', [p for p in clean_phones if p])
+                df = pd.read_excel(uploaded_file, dtype=str)
 
-                to_blacklist = []
-                c_new, c_dup, c_inv = 0, 0, 0
+            df = df.fillna("")
 
-                for i, clean in enumerate(clean_phones):
-                    if not clean:
-                        c_inv += 1
-                    elif clean in existing_black:
-                        c_dup += 1
-                    else:
-                        to_blacklist.append({"phone": clean})
-                        existing_black.add(clean)
-                        c_new += 1
-                    if i % 100 == 0: progress.progress(min(i / len(df), 1.0))
-                
-                if to_blacklist:
-                    for i in range(0, len(to_blacklist), 1000):
-                        try:
-                            supabase.table('blacklist').upsert(to_blacklist, on_conflict='phone', ignore_duplicates=True).execute()
-                        except: pass
-                
-                st.success("✅ Blacklist bijgewerkt!")
-                c1, c2, c3 = st.columns(3)
-                c1.metric("⛔ Nieuw op Blacklist", c_new)
-                c2.metric("🔄 Stond er al op", c_dup)
-                c3.metric("⚠️ Ongeldig", c_inv)
-                
-            progress.progress(1.0)
-            st.cache_data.clear()
-            time.sleep(2)
-            st.rerun()
+            cols = df.columns.tolist()
+            phone_col = st.selectbox("Welke kolom is het telefoonnummer?", ["Kies..."] + cols)
 
-    except Exception as e:
-        st.error(f"Fout bij lezen bestand: {e}")
+            name_col = None
+            if import_doel == "📞 Leads voor Dialer":
+                name_col = st.selectbox("Welke kolom is de naam?", ["Kies..."] + cols)
 
-st.divider()
+            if st.button(f"🚀 Start Import naar {import_doel}") and phone_col != "Kies...":
+                progress = st.progress(0)
+                status_text = st.empty()
+
+                if import_doel == "📞 Leads voor Dialer":
+                    # Batch-naam: bestandsnaam (zonder extensie, opgeschoond) + datum/tijd
+                    bestandsnaam = re.sub(r'\.[^.]+$', '', uploaded_file.name)
+                    bestandsnaam = re.sub(r'[^\w\-]', '_', bestandsnaam).strip('_').lower() or "import"
+                    batch_id = f"{bestandsnaam}_{datetime.now().strftime('%Y-%m-%d_%H%M')}"
+
+                    # Pass 1: normaliseer alle nummers één keer
+                    clean_phones = [normalize_number(row[phone_col]) for _, row in df.iterrows()]
+
+                    # Check alleen de nummers uit dit bestand tegen DB (niet hele tabel ophalen)
+                    geldige = [p for p in clean_phones if p]
+                    existing_numbers = existing_phones('leads', geldige)
+                    blacklist_numbers = existing_phones('blacklist', geldige)
+
+                    to_upload = []
+                    c_new, c_dup, c_black, c_inv = 0, 0, 0, 0
+
+                    for i, (index, row) in enumerate(df.iterrows()):
+                        clean = clean_phones[i]
+                        if not clean:
+                            c_inv += 1
+                        elif clean in blacklist_numbers:
+                            c_black += 1
+                        elif clean in existing_numbers:
+                            c_dup += 1
+                        else:
+                            clean_naam = str(row[name_col]) if name_col and name_col != "Kies..." else "Klant"
+                            to_upload.append({
+                                "phone": clean,
+                                "name": clean_naam,
+                                "status": "new",
+                                "batch_id": batch_id,
+                                "original_data": row.to_dict()
+                            })
+                            existing_numbers.add(clean)
+                            c_new += 1
+
+                        if i % 100 == 0: progress.progress(min(i / len(df), 1.0))
+
+                    if to_upload:
+                        # Upload in chunks van 1000
+                        for i in range(0, len(to_upload), 1000):
+                            try:
+                                supabase.table('leads').upsert(to_upload[i:i+1000], on_conflict='phone', ignore_duplicates=True).execute()
+                            except Exception as e:
+                                print(f"Batch warning: {e}")
+
+                    st.success(f"✅ Import voltooid! Batch: **{batch_id}**")
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("🆕 Toegevoegd", c_new)
+                    c2.metric("🔄 Dubbel", c_dup)
+                    c3.metric("⛔ Blacklist", c_black)
+                    c4.metric("⚠️ Ongeldig", c_inv)
+
+                else:
+                    clean_phones = [normalize_number(row[phone_col]) for _, row in df.iterrows()]
+                    existing_black = existing_phones('blacklist', [p for p in clean_phones if p])
+
+                    to_blacklist = []
+                    c_new, c_dup, c_inv = 0, 0, 0
+
+                    for i, clean in enumerate(clean_phones):
+                        if not clean:
+                            c_inv += 1
+                        elif clean in existing_black:
+                            c_dup += 1
+                        else:
+                            to_blacklist.append({"phone": clean})
+                            existing_black.add(clean)
+                            c_new += 1
+                        if i % 100 == 0: progress.progress(min(i / len(df), 1.0))
+
+                    if to_blacklist:
+                        for i in range(0, len(to_blacklist), 1000):
+                            try:
+                                supabase.table('blacklist').upsert(to_blacklist, on_conflict='phone', ignore_duplicates=True).execute()
+                            except: pass
+
+                    st.success("✅ Blacklist bijgewerkt!")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("⛔ Nieuw op Blacklist", c_new)
+                    c2.metric("🔄 Stond er al op", c_dup)
+                    c3.metric("⚠️ Ongeldig", c_inv)
+
+                progress.progress(1.0)
+                st.cache_data.clear()
+                time.sleep(2)
+                st.rerun()
+
+        except Exception as e:
+            st.error(f"Fout bij lezen bestand: {e}")
 
 # --- 10. EXPORT ---
-st.subheader("📥 Export Succesvolle Leads")
+with st.expander("📥 Export Succesvolle Leads", expanded=False):
+    col_d1, col_d2 = st.columns(2)
+    start_d = col_d1.date_input("Van", value=date.today())
+    end_d = col_d2.date_input("Tot", value=date.today())
 
-col_d1, col_d2 = st.columns(2)
-start_d = col_d1.date_input("Van", value=date.today())
-end_d = col_d2.date_input("Tot", value=date.today())
+    if st.button("Download Excel"):
+        try:
+            res = supabase.table('leads').select("*").eq("result", "SUCCES") \
+                .gte("ended_at", str(start_d)).lte("ended_at", str(end_d) + " 23:59:59").execute()
 
-if st.button("Download Excel"):
-    try:
-        res = supabase.table('leads').select("*").eq("result", "SUCCES") \
-            .gte("ended_at", str(start_d)).lte("ended_at", str(end_d) + " 23:59:59").execute()
-        
-        df_exp = pd.DataFrame(res.data)
-        
-        if not df_exp.empty:
-            if 'original_data' in df_exp.columns:
-                json_data = pd.json_normalize(df_exp['original_data'])
-                df_final = pd.concat([df_exp[['phone', 'result', 'duration', 'recording', 'ended_at']], json_data], axis=1)
-            else: df_final = df_exp
-            
-            df_final.insert(0, "enquete", "telefonische enquete vrije tijd en ontspanning")
-            
-            if 'ended_at' in df_final.columns:
-                # LET OP: Deze regel moet ingesprongen zijn (met 4 spaties)
-                df_final['enquete_datum'] = pd.to_datetime(df_final['ended_at'], errors='coerce').dt.strftime('%d-%m-%Y')
-                
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                df_final.to_excel(writer, index=False)
-                
-            st.download_button("⬇️ Download Excel", buffer, f"leads_{start_d}.xlsx", "application/vnd.ms-excel")
-        else:
-            st.warning("Geen succesvolle leads gevonden.")
+            df_exp = pd.DataFrame(res.data)
 
-    except Exception as e:
-        st.error(f"Fout: {e}")
+            if not df_exp.empty:
+                if 'original_data' in df_exp.columns:
+                    json_data = pd.json_normalize(df_exp['original_data'])
+                    df_final = pd.concat([df_exp[['phone', 'result', 'duration', 'recording', 'ended_at']], json_data], axis=1)
+                else: df_final = df_exp
 
-st.divider()
+                df_final.insert(0, "enquete", "telefonische enquete vrije tijd en ontspanning")
+
+                if 'ended_at' in df_final.columns:
+                    df_final['enquete_datum'] = pd.to_datetime(df_final['ended_at'], errors='coerce').dt.strftime('%d-%m-%Y')
+
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    df_final.to_excel(writer, index=False)
+
+                st.download_button("⬇️ Download Excel", buffer, f"leads_{start_d}.xlsx", "application/vnd.ms-excel")
+            else:
+                st.warning("Geen succesvolle leads gevonden.")
+
+        except Exception as e:
+            st.error(f"Fout: {e}")
 
 # --- TELEFOONNUMMERS (4 VAKJES) ---
 try:
