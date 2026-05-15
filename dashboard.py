@@ -150,11 +150,44 @@ def fetch_all(table, columns, page_size=1000):
         offset += page_size
     return rows
 
+def existing_phones(table, phones, chunk_size=200):
+    # Check welke nummers al in 'table' staan, via gerichte IN-query in chunks
+    if not phones:
+        return set()
+    unique = list({p for p in phones if p})
+    found = set()
+    for i in range(0, len(unique), chunk_size):
+        res = supabase.table(table).select('phone').in_('phone', unique[i:i+chunk_size]).execute()
+        found.update(row['phone'] for row in (res.data or []))
+    return found
+
+@st.cache_data(ttl=15, show_spinner=False)
+def cached_batches_overzicht():
+    # Server-side aggregatie via Postgres RPC — stuurt alleen samenvatting, geen 100k rijen
+    res = supabase.rpc('batches_overzicht').execute()
+    return res.data or []
+
+@st.cache_data(ttl=15, show_spinner=False)
+def cached_kpi_counts(vandaag):
+    succes = supabase.table('leads').select("*", count='exact', head=True) \
+        .eq('result', 'SUCCES') \
+        .gte('ended_at', f"{vandaag} 00:00:00").lte('ended_at', f"{vandaag} 23:59:59").execute().count
+    fail = supabase.table('leads').select("*", count='exact', head=True) \
+        .eq('result', 'MISLUKT') \
+        .gte('ended_at', f"{vandaag} 00:00:00").lte('ended_at', f"{vandaag} 23:59:59").execute().count
+    todo = supabase.table('leads').select("*", count='exact', head=True).eq('status', 'new').execute().count
+    return succes, fail, todo
+
+@st.cache_data(ttl=30, show_spinner=False)
+def cached_config(key, default=None):
+    try:
+        res = supabase.table('config').select("value").eq("key", key).execute()
+        return res.data[0]['value'] if res.data else default
+    except Exception:
+        return default
+
 # --- 4. STATUS CONTROLEREN ---
-try:
-    status_res = supabase.table('config').select("value").eq("key", "status").execute()
-    current_status = status_res.data[0]['value'] if status_res.data else "UIT"
-except: current_status = "UIT"
+current_status = cached_config("status", "UIT")
 
 if current_status == "AAN":
     pill_html = '<span class="status-pill pill-active"><span class="status-dot dot-active"></span>Systeem actief</span>'
@@ -174,16 +207,8 @@ st.markdown(f"""
 # --- 5. KPI TELLERS (VANDAAG) ---
 vandaag = date.today().isoformat()
 try:
-    count_succes = supabase.table('leads').select("*", count='exact', head=True) \
-        .eq('result', 'SUCCES') \
-        .gte('ended_at', f"{vandaag} 00:00:00").lte('ended_at', f"{vandaag} 23:59:59").execute().count
-        
-    count_fail = supabase.table('leads').select("*", count='exact', head=True) \
-        .eq('result', 'MISLUKT') \
-        .gte('ended_at', f"{vandaag} 00:00:00").lte('ended_at', f"{vandaag} 23:59:59").execute().count
-        
-    count_todo = supabase.table('leads').select("*", count='exact', head=True).eq('status', 'new').execute().count
-except:
+    count_succes, count_fail, count_todo = cached_kpi_counts(vandaag)
+except Exception:
     count_succes, count_fail, count_todo = 0, 0, 0
 
 c1, c2, c3 = st.columns(3)
@@ -199,20 +224,19 @@ col_btn1, col_btn2, col_btn3 = st.columns(3)
 
 if col_btn1.button("▶ START DIALER", type="primary"):
     supabase.table('config').upsert({"key": "status", "value": "AAN"}).execute()
-    st.rerun()
+    st.cache_data.clear(); st.rerun()
 
 if col_btn2.button("⏹ STOP DIALER"):
     supabase.table('config').upsert({"key": "status", "value": "UIT"}).execute()
-    st.rerun()
+    st.cache_data.clear(); st.rerun()
 
 if col_btn3.button("🔄 VERVERS"):
-    st.rerun()
+    st.cache_data.clear(); st.rerun()
 
 # --- SNELHEID ---
 try:
-    speed_res = supabase.table('config').select("value").eq("key", "speed").execute()
-    current_speed = int(speed_res.data[0]['value']) if speed_res.data else 20
-except:
+    current_speed = int(cached_config("speed", "20"))
+except Exception:
     current_speed = 20
 
 st.markdown(f"##### ⚡ Snelheid &nbsp;·&nbsp; <span style='color:#6b7280;font-weight:500'>{current_speed} calls per minuut</span>", unsafe_allow_html=True)
@@ -220,16 +244,16 @@ new_speed = st.slider("snelheid", min_value=10, max_value=100, value=current_spe
 
 if new_speed != current_speed:
     supabase.table('config').upsert({"key": "speed", "value": str(new_speed)}).execute()
+    st.cache_data.clear()
     st.success(f"Snelheid aangepast naar {new_speed} calls/minuut!")
     time.sleep(1)
     st.rerun()
 
 # --- 7. TELEFOONNUMMERS (4 VAKJES) ---
-# Haal huidige nummers op
 try:
-    phone_res = supabase.table('config').select("value").eq("key", "phone_ids").execute()
-    saved_list = json.loads(phone_res.data[0]['value']) if phone_res.data else ["", "", "", ""]
-except:
+    raw_ids = cached_config("phone_ids")
+    saved_list = json.loads(raw_ids) if raw_ids else ["", "", "", ""]
+except Exception:
     saved_list = ["", "", "", ""]
 
 while len(saved_list) < 4: saved_list.append("")
@@ -248,6 +272,7 @@ with st.expander(f"📞 Uitbel Nummers (Vapi Phone IDs) — {actief_aantal} acti
         new_list = [x.strip() for x in [p1, p2, p3, p4] if x.strip()]
         json_str = json.dumps(new_list)
         supabase.table('config').upsert({"key": "phone_ids", "value": json_str}).execute()
+        st.cache_data.clear()
         st.success(f"Opgeslagen! De motor gebruikt nu {len(new_list)} nummers.")
         time.sleep(1); st.rerun()
 
@@ -272,16 +297,18 @@ with st.expander("🛠️ Beheer & Opschonen", expanded=False):
             # 4. Optioneel: Reset 'silence-timed-out' (vaak ook voicemail)
             supabase.table('leads').update({"status": "new", "result": None}).eq("ended_reason", "silence-timed-out").execute()
 
+            st.cache_data.clear()
             st.success("✅ Leads (Geen Gehoor) zijn gereset!")
             time.sleep(2)
             st.rerun()
-            
+
         except Exception as e:
             st.error(f"Fout bij resetten: {e}")
-        
+
     if b2.button("🗑️ Verwijder ALLES (Hard Reset)"):
         if st.checkbox("Ik weet zeker dat ik de hele database wil wissen"):
             supabase.table('leads').delete().neq("id", 0).execute()
+            st.cache_data.clear()
             st.warning("Database is volledig gewist.")
             time.sleep(2)
             st.rerun()
@@ -294,31 +321,29 @@ st.divider()
 st.subheader("📊 Batches Overzicht")
 
 try:
-    df_batches = pd.DataFrame(fetch_all('leads', 'batch_id,status,result,ended_reason'))
+    batches_data = cached_batches_overzicht()
 except Exception as e:
-    st.error(f"Kan batches niet ophalen: {e}")
-    df_batches = pd.DataFrame()
+    st.error(f"Kan batches niet ophalen: {e}. Heb je de RPC functie 'batches_overzicht' al aangemaakt in Supabase?")
+    batches_data = []
 
-if df_batches.empty:
+if not batches_data:
     st.info("Nog geen leads in de database.")
 else:
-    df_batches['batch_id'] = df_batches['batch_id'].fillna('onbekend')
-
     # Nieuwste batches bovenaan, 'oude_import' altijd onderaan
-    alle_batches = df_batches['batch_id'].unique().tolist()
-    overige = sorted([b for b in alle_batches if b != 'oude_import'], reverse=True)
-    if 'oude_import' in alle_batches:
-        overige.append('oude_import')
+    overige = sorted([b for b in batches_data if b['batch_id'] != 'oude_import'],
+                     key=lambda b: b['batch_id'], reverse=True)
+    oude = [b for b in batches_data if b['batch_id'] == 'oude_import']
+    geordend = overige + oude
 
     GEEN_GEHOOR_REDENEN = ["customer-did-not-answer", "no-answer-transfer", "voicemail", "silence-timed-out"]
 
-    for batch in overige:
-        sub = df_batches[df_batches['batch_id'] == batch]
-        totaal = len(sub)
-        wachtrij = int((sub['status'] == 'new').sum())
-        succes = int((sub['result'] == 'SUCCES').sum())
-        mislukt = int((sub['result'] == 'MISLUKT').sum())
-        bezig = int((sub['status'] == 'in-progress').sum())
+    for b in geordend:
+        batch = b['batch_id']
+        totaal = int(b['totaal'])
+        wachtrij = int(b['te_bellen'])
+        succes = int(b['succes'])
+        mislukt = int(b['mislukt'])
+        bezig = int(b['bezig'])
 
         titel = f"📦  {batch}    —    {totaal} leads  ·  ⏳ {wachtrij} te bellen  ·  ✅ {succes} succes"
         with st.expander(titel, expanded=False):
@@ -331,14 +356,13 @@ else:
 
             col_r, col_d = st.columns(2)
 
-            # Reset 'Geen Gehoor' alleen voor deze batch
+            # Reset 'Geen Gehoor' alleen voor deze batch — één query met in_() ipv vier losse
             if col_r.button("♻️ Reset Geen Gehoor", key=f"reset_{batch}"):
                 try:
-                    aantal = 0
-                    for reden in GEEN_GEHOOR_REDENEN:
-                        res = supabase.table('leads').update({"status": "new", "result": None}) \
-                            .eq("batch_id", batch).eq("ended_reason", reden).execute()
-                        aantal += len(res.data) if res.data else 0
+                    res = supabase.table('leads').update({"status": "new", "result": None}) \
+                        .eq("batch_id", batch).in_("ended_reason", GEEN_GEHOOR_REDENEN).execute()
+                    aantal = len(res.data) if res.data else 0
+                    st.cache_data.clear()
                     st.success(f"✅ {aantal} leads in '{batch}' staan weer in de wachtrij.")
                     time.sleep(1.5); st.rerun()
                 except Exception as e:
@@ -350,6 +374,7 @@ else:
                 if bevestig:
                     try:
                         supabase.table('leads').delete().eq("batch_id", batch).execute()
+                        st.cache_data.clear()
                         st.warning(f"🗑️ Batch '{batch}' is volledig verwijderd.")
                         time.sleep(1.5); st.rerun()
                     except Exception as e:
@@ -392,14 +417,19 @@ if uploaded_file:
                 bestandsnaam = re.sub(r'[^\w\-]', '_', bestandsnaam).strip('_').lower() or "import"
                 batch_id = f"{bestandsnaam}_{datetime.now().strftime('%Y-%m-%d_%H%M')}"
 
-                existing_numbers = {row['phone'] for row in fetch_all('leads', 'phone')}
-                blacklist_numbers = {row['phone'] for row in fetch_all('blacklist', 'phone')}
+                # Pass 1: normaliseer alle nummers één keer
+                clean_phones = [normalize_number(row[phone_col]) for _, row in df.iterrows()]
+
+                # Check alleen de nummers uit dit bestand tegen DB (niet hele tabel ophalen)
+                geldige = [p for p in clean_phones if p]
+                existing_numbers = existing_phones('leads', geldige)
+                blacklist_numbers = existing_phones('blacklist', geldige)
 
                 to_upload = []
                 c_new, c_dup, c_black, c_inv = 0, 0, 0, 0
 
                 for i, (index, row) in enumerate(df.iterrows()):
-                    clean = normalize_number(row[phone_col])
+                    clean = clean_phones[i]
                     if not clean:
                         c_inv += 1
                     elif clean in blacklist_numbers:
@@ -417,7 +447,7 @@ if uploaded_file:
                         })
                         existing_numbers.add(clean)
                         c_new += 1
-                    
+
                     if i % 100 == 0: progress.progress(min(i / len(df), 1.0))
                 
                 if to_upload:
@@ -436,13 +466,13 @@ if uploaded_file:
                 c4.metric("⚠️ Ongeldig", c_inv)
 
             else:
-                existing_black = {row['phone'] for row in fetch_all('blacklist', 'phone')}
-                
+                clean_phones = [normalize_number(row[phone_col]) for _, row in df.iterrows()]
+                existing_black = existing_phones('blacklist', [p for p in clean_phones if p])
+
                 to_blacklist = []
                 c_new, c_dup, c_inv = 0, 0, 0
-                
-                for i, (index, row) in enumerate(df.iterrows()):
-                    clean = normalize_number(row[phone_col])
+
+                for i, clean in enumerate(clean_phones):
                     if not clean:
                         c_inv += 1
                     elif clean in existing_black:
@@ -466,6 +496,7 @@ if uploaded_file:
                 c3.metric("⚠️ Ongeldig", c_inv)
                 
             progress.progress(1.0)
+            st.cache_data.clear()
             time.sleep(2)
             st.rerun()
 
