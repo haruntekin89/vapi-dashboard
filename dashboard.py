@@ -546,6 +546,8 @@ with st.expander("📥 Export Succesvolle Leads", expanded=False):
                     df_final = pd.concat([df_exp[['phone', 'result', 'duration', 'recording', 'ended_at']], json_data], axis=1)
                 else: df_final = df_exp
 
+                if "enquete" in df_final.columns:
+                    df_final = df_final.drop(columns=["enquete"])
                 df_final.insert(0, "enquete", "telefonische enquete vrije tijd en ontspanning")
 
                 if 'ended_at' in df_final.columns:
