@@ -560,11 +560,11 @@ with st.expander("📥 Export Succesvolle Leads", expanded=False):
                     "postcode":              ["postcode", "zipcode", "postal_code", "zip"],
                     "stad":                  ["stad", "woonplaats", "plaats", "city"],
                     "email":                 ["email", "e-mail", "emailadres", "mail"],
-                    "iban_datum":            ["iban_datum", "iban_date"],
+                    "iban":                  ["iban", "iban_nummer", "iban_number", "bankrekening", "rekeningnummer"],
                 }
                 EXPORT_ORDER = ["enquete", "phone", "sex", "initialen", "naam", "tussenvoegsel",
                                 "achternaam", "straat", "huisnummer", "huisnummer_toevoeging",
-                                "postcode", "stad", "email", "iban_datum", "enquete_datum"]
+                                "postcode", "stad", "email", "iban", "enquete_datum"]
 
                 def _norm(s):
                     return str(s).lower().strip().replace(" ", "_").replace("-", "_")
