@@ -543,15 +543,48 @@ with st.expander("📥 Export Succesvolle Leads", expanded=False):
             if not df_exp.empty:
                 if 'original_data' in df_exp.columns:
                     json_data = pd.json_normalize(df_exp['original_data'])
-                    df_final = pd.concat([df_exp[['phone', 'result', 'duration', 'recording', 'ended_at']], json_data], axis=1)
-                else: df_final = df_exp
+                    df_raw = pd.concat([df_exp[['phone', 'result', 'duration', 'recording', 'ended_at']], json_data], axis=1)
+                else:
+                    df_raw = df_exp
 
-                if "enquete" in df_final.columns:
-                    df_final = df_final.drop(columns=["enquete"])
+                COLUMN_VARIANTS = {
+                    "phone":                 ["phone", "telefoon", "telefoonnummer", "tel"],
+                    "sex":                   ["sex", "geslacht", "gender"],
+                    "initialen":             ["initialen", "initials", "voorletters"],
+                    "naam":                  ["naam", "voornaam", "first_name", "firstname", "name"],
+                    "tussenvoegsel":         ["tussenvoegsel", "middle_name", "middlename"],
+                    "achternaam":            ["achternaam", "last_name", "lastname", "surname"],
+                    "straat":                ["straat", "adres", "address", "street", "straatnaam"],
+                    "huisnummer":            ["huisnummer", "huisnr", "house_number", "housenumber"],
+                    "huisnummer_toevoeging": ["huisnummer_toevoeging", "toevoeging", "huisnr_toevoeging", "addition"],
+                    "postcode":              ["postcode", "zipcode", "postal_code", "zip"],
+                    "stad":                  ["stad", "woonplaats", "plaats", "city"],
+                    "email":                 ["email", "e-mail", "emailadres", "mail"],
+                    "iban_datum":            ["iban_datum", "iban_date"],
+                }
+                EXPORT_ORDER = ["enquete", "phone", "sex", "initialen", "naam", "tussenvoegsel",
+                                "achternaam", "straat", "huisnummer", "huisnummer_toevoeging",
+                                "postcode", "stad", "email", "iban_datum", "enquete_datum"]
+
+                def _norm(s):
+                    return str(s).lower().strip().replace(" ", "_").replace("-", "_")
+
+                norm_map = {col: _norm(col) for col in df_raw.columns}
+                df_final = pd.DataFrame(index=df_raw.index)
+                for canonical, variants in COLUMN_VARIANTS.items():
+                    variant_set = {_norm(v) for v in variants}
+                    matching = [col for col, n in norm_map.items() if n in variant_set]
+                    if matching:
+                        series = df_raw[matching].replace("", pd.NA).bfill(axis=1).iloc[:, 0]
+                        df_final[canonical] = series.fillna("")
+                    else:
+                        df_final[canonical] = ""
+
                 df_final.insert(0, "enquete", "telefonische enquete vrije tijd en ontspanning")
+                if 'ended_at' in df_raw.columns:
+                    df_final['enquete_datum'] = pd.to_datetime(df_raw['ended_at'], errors='coerce').dt.strftime('%d-%m-%Y')
 
-                if 'ended_at' in df_final.columns:
-                    df_final['enquete_datum'] = pd.to_datetime(df_final['ended_at'], errors='coerce').dt.strftime('%d-%m-%Y')
+                df_final = df_final[[c for c in EXPORT_ORDER if c in df_final.columns]]
 
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
