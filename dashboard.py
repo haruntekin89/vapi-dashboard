@@ -548,26 +548,30 @@ with st.expander("📥 Export Succesvolle Leads", expanded=False):
                     df_raw = df_exp
 
                 COLUMN_VARIANTS = {
-                    "phone":                 ["phone", "telefoon", "telefoonnummer", "tel"],
-                    "sex":                   ["sex", "geslacht", "gender"],
+                    "phone":                 ["phone", "telefoon", "telefoonnummer", "tel", "mobiel", "gsm"],
+                    "sex":                   ["sex", "geslacht", "gender", "geslacht_mv", "mv", "m_v"],
                     "initialen":             ["initialen", "initials", "voorletters"],
-                    "naam":                  ["naam", "voornaam", "first_name", "firstname", "name"],
-                    "tussenvoegsel":         ["tussenvoegsel", "middle_name", "middlename"],
-                    "achternaam":            ["achternaam", "last_name", "lastname", "surname"],
+                    "naam":                  ["naam", "voornaam", "first_name", "firstname", "name", "roepnaam"],
+                    "tussenvoegsel":         ["tussenvoegsel", "middle_name", "middlename", "tussen"],
+                    "achternaam":            ["achternaam", "last_name", "lastname", "surname", "familienaam"],
                     "straat":                ["straat", "adres", "address", "street", "straatnaam"],
-                    "huisnummer":            ["huisnummer", "huisnr", "house_number", "housenumber"],
-                    "huisnummer_toevoeging": ["huisnummer_toevoeging", "toevoeging", "huisnr_toevoeging", "addition"],
+                    "huisnummer":            ["huisnummer", "huisnr", "house_number", "housenumber", "nr", "nummer"],
+                    "huisnummer_toevoeging": ["huisnummer_toevoeging", "toevoeging", "huisnr_toevoeging", "addition", "huisnummertoevoeging"],
                     "postcode":              ["postcode", "zipcode", "postal_code", "zip"],
                     "stad":                  ["stad", "woonplaats", "plaats", "city"],
-                    "email":                 ["email", "e-mail", "emailadres", "mail"],
+                    "email":                 ["email", "e-mail", "emailadres", "e-mailadres", "mail", "mailadres", "e_mail"],
                     "iban":                  ["iban", "iban_nummer", "iban_number", "bankrekening", "rekeningnummer"],
+                    "geboortedatum":         ["geboortedatum", "geboorte", "birthdate", "birth_date", "dob", "date_of_birth"],
                 }
                 EXPORT_ORDER = ["enquete", "phone", "sex", "initialen", "naam", "tussenvoegsel",
                                 "achternaam", "straat", "huisnummer", "huisnummer_toevoeging",
-                                "postcode", "stad", "email", "iban", "enquete_datum"]
+                                "postcode", "stad", "email", "iban", "geboortedatum", "enquete_datum",
+                                "original_data"]
 
+                # Strip alle niet-alfanumerieke tekens zodat 'E-mailadres', 'e_mailadres'
+                # en 'emailadres' allemaal naar 'emailadres' normaliseren.
                 def _norm(s):
-                    return str(s).lower().strip().replace(" ", "_").replace("-", "_")
+                    return re.sub(r'[^a-z0-9]', '', str(s).lower())
 
                 norm_map = {col: _norm(col) for col in df_raw.columns}
                 df_final = pd.DataFrame(index=df_raw.index)
@@ -584,7 +588,30 @@ with st.expander("📥 Export Succesvolle Leads", expanded=False):
                 if 'ended_at' in df_raw.columns:
                     df_final['enquete_datum'] = pd.to_datetime(df_raw['ended_at'], errors='coerce').dt.strftime('%d-%m-%Y')
 
+                # Voeg ruwe original_data als JSON-string toe ter controle.
+                if 'original_data' in df_exp.columns:
+                    df_final['original_data'] = df_exp['original_data'].apply(
+                        lambda v: json.dumps(v, ensure_ascii=False) if v is not None else ""
+                    )
+
                 df_final = df_final[[c for c in EXPORT_ORDER if c in df_final.columns]]
+
+                # Controle: meld per rij welke verplichte velden leeg zijn gebleven
+                # terwijl original_data wel iets bevatte — dat duidt op een mismatch
+                # in COLUMN_VARIANTS en moet onderzocht worden.
+                check_cols = [c for c in ["sex", "initialen", "naam", "achternaam",
+                                           "straat", "huisnummer", "postcode", "stad",
+                                           "email", "iban", "geboortedatum"]
+                              if c in df_final.columns]
+                missing_report = []
+                for idx, row in df_final.iterrows():
+                    leeg = [c for c in check_cols if not str(row[c]).strip()]
+                    if leeg:
+                        phone = row.get("phone", "")
+                        missing_report.append(f"• {phone}: leeg → {', '.join(leeg)}")
+                if missing_report:
+                    st.warning("Let op — sommige velden zijn leeg gebleven na mapping. "
+                               "Controleer `original_data` in de Excel:\n" + "\n".join(missing_report[:20]))
 
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
