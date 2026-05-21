@@ -56,9 +56,11 @@ st.markdown("""
     }
     .pill-active  { background: #d1fae5; color: #065f46; }
     .pill-stopped { background: #fee2e2; color: #991b1b; }
+    .pill-warning { background: #fef3c7; color: #92400e; }
     .status-dot { width: 8px; height: 8px; border-radius: 50%; }
     .dot-active  { background: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
     .dot-stopped { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.15); }
+    .dot-warning { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,0.15); }
 
     /* KPI cards */
     [data-testid="metric-container"] {
@@ -220,8 +222,12 @@ def cached_config(key, default=None):
 
 # --- 4. STATUS CONTROLEREN ---
 current_status = cached_config("status", "UIT")
+vapi_health = cached_config("vapi_health", "OK")
+vapi_health_since = cached_config("vapi_health_since")
 
-if current_status == "AAN":
+if current_status == "AAN" and vapi_health == "DOWN":
+    pill_html = '<span class="status-pill pill-warning"><span class="status-dot dot-warning"></span>Wachten op Vapi</span>'
+elif current_status == "AAN":
     pill_html = '<span class="status-pill pill-active"><span class="status-dot dot-active"></span>Systeem actief</span>'
 else:
     pill_html = '<span class="status-pill pill-stopped"><span class="status-dot dot-stopped"></span>Systeem gestopt</span>'
@@ -235,6 +241,20 @@ st.markdown(f"""
     {pill_html}
 </div>
 """, unsafe_allow_html=True)
+
+# Banner bij Vapi outage — motor pauzeert en hervat automatisch
+if vapi_health == "DOWN":
+    sinds_tekst = ""
+    if vapi_health_since:
+        try:
+            t = datetime.fromisoformat(vapi_health_since)
+            sinds_tekst = f" (sinds {t.strftime('%H:%M')})"
+        except Exception:
+            pass
+    st.error(
+        f"🔴 **Vapi API onbereikbaar{sinds_tekst}** — bellen is automatisch gepauzeerd. "
+        "De motor probeert elke 2 minuten opnieuw en hervat zodra Vapi reageert."
+    )
 
 # --- 5. KPI TELLERS (VANDAAG) ---
 vandaag = date.today().isoformat()
